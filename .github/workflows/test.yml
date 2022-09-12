@@ -1,0 +1,86 @@
+name: Build-push-deploy
+on: 
+  push: 
+    branches: [ main ]   
+  workflow_dispatch:    
+env:    
+     NO_PROXY: "localhost,*.astrazeneca.net"
+     KUBECONFIG_FILE: '${{ secrets.KUBECONFIG }}'  
+     RELEASE_NAME: "helloworld1" 
+     CHART_NAME: "helloworld"     
+jobs:
+  build-push: 
+    runs-on: self-hosted    
+    steps:
+      - uses: azure/setup-kubectl@v3
+        with:
+          version: v1.22.7
+          id: install
+      
+      - run: kubectl version
+          
+      - name: Checkout current repository
+        uses: actions/checkout@v2   
+
+      - name: Checkout action repository
+        uses: actions/checkout@v2
+        with:
+          repository: AZ-AI/bikg-actions
+          ref: main
+          token: ${{secrets.PRIVATE_REPO_ACCESS_TOKEN}}
+          path: ./bikg-actions
+    
+      - name: Docker build & push to Harbor
+        uses: ./bikg-actions/build-push-image
+        with:
+          project-name: bikg
+          app-name: demo-test-action
+          registry-url: harbor.csis.astrazeneca.net
+          image-name: demo-test-action
+          
+          #tag: $GITHUB_RUN_NUMBER
+   
+  deploy-stage:
+    needs: build-push
+    runs-on: self-hosted
+    environment: preview_stage
+    steps:
+      - name: "checkout current repo"
+        uses: actions/checkout@v2 
+
+      - name: Checkout action repository
+        uses: actions/checkout@v2
+        with:
+          repository: AZ-AI/bikg-actions
+          ref: main
+          token: ${{secrets.PRIVATE_REPO_ACCESS_TOKEN}}
+          path: ./bikg-actions
+         
+      - name: Deploy helm Chart
+        uses: ./bikg-actions/helm-deploy
+        with:
+             KUBE_CONFIG: ${{ secrets.KUBECONFIG }}
+             RELEASE_NAME: $RELEASE_NAME
+             CHART_NAME: $CHART_NAME
+  deploy-prod:
+    needs: deploy-stage
+    runs-on: self-hosted
+    environment: prod
+    steps:
+      - name: "checkout current repo"
+        uses: actions/checkout@v2 
+
+      - name: Checkout action repository
+        uses: actions/checkout@v2
+        with:
+          repository: AZ-AI/bikg-actions
+          ref: main
+          token: ${{secrets.PRIVATE_REPO_ACCESS_TOKEN}}
+          path: ./bikg-actions
+         
+      - name: Deploy helm Chart
+        uses: ./bikg-actions/helm-deploy
+        with:
+             KUBE_CONFIG: ${{ secrets.KUBECONFIG }}
+             RELEASE_NAME: $RELEASE_NAME
+             CHART_NAME: $CHART_NAME
